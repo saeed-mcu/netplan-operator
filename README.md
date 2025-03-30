@@ -23,8 +23,31 @@ Chnage the code and logic for reconciler and type:
 ```
 make generate
 make manifest
-# Apply CRD into Cluster
+```
+
+## Run Operator
+### Run locally outside the cluster (for development purposes)
+Apply CRD into cluster and run controller:
+```bash
 kustomize build config/crd/ | kubectl apply -f -
-# run controller
 go run ./cmd/main.go
+```
+Then apply your CR.
+
+### Run as a Deployment inside the cluster
+
+This is essentially just calling docker build (with an added dependency to make a test). The Makefile command uses this IMG variable to define the tag for the compiled image.
+```bash
+export IMG=my-reg.io/sample/netplan-operator:v0.1
+make docker-build
+```
+
+Oush to docker registry
+```bash
+make docker push
+```
+
+With the Operator image accessible (and the public image name defined in an environment variable or modified in Makefile), all that is required to run the Operator in a cluster now:
+```bash
+make deploy
 ```
