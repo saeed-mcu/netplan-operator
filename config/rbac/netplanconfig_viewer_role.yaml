@@ -1,32 +1,23 @@
----
+# permissions for end users to view netplanconfigs.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: manager-role
+  labels:
+    app.kubernetes.io/name: netplan-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: netplanconfig-viewer-role
 rules:
 - apiGroups:
   - network.netplan.io
   resources:
   - netplanconfigs
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
-- apiGroups:
-  - network.netplan.io
-  resources:
-  - netplanconfigs/finalizers
-  verbs:
-  - update
 - apiGroups:
   - network.netplan.io
   resources:
   - netplanconfigs/status
   verbs:
   - get
-  - patch
-  - update

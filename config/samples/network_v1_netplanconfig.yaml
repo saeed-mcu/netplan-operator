@@ -1,0 +1,15 @@
+apiVersion: network.netplan.io/v1
+kind: NetplanConfig
+metadata:
+  labels:
+    app.kubernetes.io/name: netplan-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: netplanconfig-sample
+spec:
+  networkConfig: |
+    network:
+      version: 2
+      ethernets:
+          ens224:
+              addresses:
+              - 192.168.10.21/24

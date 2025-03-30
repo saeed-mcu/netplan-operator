@@ -14,3 +14,17 @@ initialize a boilerplate project structure with the following:
 # so all API groups will be <group>.netplan.io
 operator-sdk init --domain netplan.io --repo github.com/saeed-mcu/netplan-operator
 ```
+
+## Step 2 : Defining an API
+```bash
+operator-sdk create api --group network --version v1 --kind NetplanConfig --resource --controller
+```
+Chnage the code and logic for reconciler and type:
+```
+make generate
+make manifest
+# Apply CRD into Cluster
+kustomize build config/crd/ | kubectl apply -f -
+# run controller
+go run ./cmd/main.go
+```

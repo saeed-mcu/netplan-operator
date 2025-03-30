@@ -1,0 +1,58 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.1
+  name: netplanconfigs.network.netplan.io
+spec:
+  group: network.netplan.io
+  names:
+    kind: NetplanConfig
+    listKind: NetplanConfigList
+    plural: netplanconfigs
+    singular: netplanconfig
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: NetplanConfig is the Schema for the netplanconfigs API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: NetplanConfigSpec defines the desired state of NetplanConfig
+            properties:
+              networkConfig:
+                description: NetworkConfig is sample netplan config
+                type: string
+            type: object
+          status:
+            description: NetplanConfigStatus defines the observed state of NetplanConfig
+            properties:
+              applied:
+                type: boolean
+              error:
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
