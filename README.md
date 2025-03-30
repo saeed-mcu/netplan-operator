@@ -37,12 +37,15 @@ Then apply your CR.
 ### Run as a Deployment inside the cluster
 
 This is essentially just calling docker build (with an added dependency to make a test). The Makefile command uses this IMG variable to define the tag for the compiled image.
+
+> NOTE: Update Dockerfile for new directory and source files
+
 ```bash
 export IMG=my-reg.io/sample/netplan-operator:v0.1
 make docker-build
 ```
 
-Oush to docker registry
+Push to docker registry
 ```bash
 make docker push
 ```
