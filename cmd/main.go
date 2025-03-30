@@ -37,7 +37,10 @@ import (
 
 	networkv1 "github.com/saeed-mcu/netplan-operator/api/v1"
 	"github.com/saeed-mcu/netplan-operator/internal/controller"
+
 	// +kubebuilder:scaffold:imports
+
+	"github.com/saeed-mcu/netplan-operator/pkg/config"
 )
 
 var (
@@ -76,6 +79,10 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	// Load configuration
+	cfg := config.LoadConfig()
+	setupLog.Info("Using Netplan Path:", "NetplanPath", cfg.NetplanPath)
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will

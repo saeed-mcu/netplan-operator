@@ -32,17 +32,15 @@ import (
 
 	netplanbin "github.com/saeed-mcu/netplan-operator/pkg/client"
 	"github.com/saeed-mcu/netplan-operator/pkg/file"
-)
 
-const (
-	//netplanConfigPath = "/etc/netplan"
-	netplanConfigPath = "/tmp/netplan"
+	"github.com/saeed-mcu/netplan-operator/pkg/config"
 )
 
 // NetplanConfigReconciler reconciles a NetplanConfig object
 type NetplanConfigReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	Config *config.Config
 }
 
 // +kubebuilder:rbac:groups=network.netplan.io,resources=netplanconfigs,verbs=get;list;watch;create;update;patch;delete
@@ -69,7 +67,7 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Write the network configuration to a file
-	filePath := filepath.Join(netplanConfigPath, fmt.Sprintf("%s.yaml", req.Name))
+	filePath := filepath.Join(r.Config.NetplanPath, fmt.Sprintf("%s.yaml", req.Name))
 	logger.Info("Start Reconcileing", "filePath", filePath)
 
 	netConfig := &networkv1.NetplanConfig{}
