@@ -67,7 +67,8 @@ spec:
       - command:
         - /manager
         args:
-          - --leader-elect
+          # disbale leader election for daemonset
+          #- --leader-elect
           - --health-probe-bind-address=:8081
         image: controller:latest
         imagePullPolicy: Always
