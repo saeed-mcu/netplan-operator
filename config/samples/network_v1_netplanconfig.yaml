@@ -10,6 +10,6 @@ spec:
     network:
       version: 2
       ethernets:
-          ens224:
+          ens192:
               addresses:
               - 192.168.10.21/24

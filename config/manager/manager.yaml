@@ -8,7 +8,7 @@ metadata:
   name: system
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: DaemonSet
 metadata:
   name: controller-manager
   namespace: system
@@ -20,7 +20,10 @@ spec:
   selector:
     matchLabels:
       control-plane: controller-manager
-  replicas: 1
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 10%
   template:
     metadata:
       annotations:
@@ -28,6 +31,9 @@ spec:
       labels:
         control-plane: controller-manager
     spec:
+      hostNetwork: true
+      hostPID: true
+      dnsPolicy: Default
       # TODO(user): Uncomment the following code to configure the nodeAffinity expression
       # according to the platforms which are supported by your solution.
       # It is considered best practice to support multiple architectures. You can
@@ -49,7 +55,7 @@ spec:
       #             values:
       #               - linux
       securityContext:
-        runAsNonRoot: true
+        runAsNonRoot: false
         # TODO(user): For common cases that do not require escalating privileges
         # it is recommended to ensure that all your Pods/Containers are restrictive.
         # More info: https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted
@@ -64,9 +70,11 @@ spec:
           - --leader-elect
           - --health-probe-bind-address=:8081
         image: controller:latest
+        imagePullPolicy: Always
         name: manager
         securityContext:
-          allowPrivilegeEscalation: false
+          runAsUser: 0      # permission for netplan config
+          privileged: true
           capabilities:
             drop:
             - "ALL"
@@ -86,10 +94,27 @@ spec:
         # More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
         resources:
           limits:
-            cpu: 500m
+            cpu: 250m
             memory: 128Mi
           requests:
             cpu: 10m
             memory: 64Mi
+        env:
+          - name: NETPLAN_CONFIG_PATH
+            value: "/etc/netplan"
+        volumeMounts:
+          - name: host-netplan
+            mountPath: /etc/netplan
+          - name: dbus-socket
+            mountPath: /host/run/dbus
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
+      volumes:
+        - name: host-netplan
+          hostPath:
+            path: /etc/netplan
+            type: Directory
+        - name: dbus-socket
+          hostPath:
+            path: /run/dbus
+            type: Directory

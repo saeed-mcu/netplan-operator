@@ -6,7 +6,7 @@ import "os"
 func WriteConfigToFile(filePath string, config string) error {
 
 	// TODO: if file exist overwrite it, maybe force option needed or warning
-	err := os.WriteFile(filePath, []byte(config), 0644)
+	err := os.WriteFile(filePath, []byte(config), 0600)
 	return err
 }
 

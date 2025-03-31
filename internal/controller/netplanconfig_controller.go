@@ -62,12 +62,15 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	_, err := netplanbin.ExecuteCommand("netplan", "info")
 	if err != nil {
-		logger.Error(err, "failed retrieving netplan info")
-		return ctrl.Result{}, err
+		logger.Info("failed retrieving netplan info")
+		//logger.Error(err, "failed retrieving netplan info")
+		//return ctrl.Result{}, err
 	}
 
 	// Write the network configuration to a file
-	filePath := filepath.Join(r.Config.NetplanPath, fmt.Sprintf("%s.yaml", req.Name))
+	//logger.Info("NetplanPath", "NetplanPath", r.Config.NetplanPath)
+	//filePath := filepath.Join(r.Config.NetplanPath, fmt.Sprintf("%s.yaml", req.Name))
+	filePath := filepath.Join("/etc/netplan", fmt.Sprintf("%s.yaml", req.Name))
 	logger.Info("Start Reconcileing", "filePath", filePath)
 
 	netConfig := &networkv1.NetplanConfig{}
@@ -78,6 +81,11 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			// TODO:
 			logger.Error(err, "Error Delete File")
 		} else {
+			_, err = netplanbin.RunWithNsenter("netplan", "apply")
+			if err != nil {
+				logger.Error(err, "Netplan Apply error")
+				return reconcile.Result{}, err
+			}
 			logger.Info("Netplan cleanup done")
 		}
 		return ctrl.Result{}, nil
@@ -93,6 +101,21 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		netConfig.Status.Applied = false
 		r.Status().Update(ctx, netConfig)
 		return reconcile.Result{}, err
+	}
+
+	_, err = netplanbin.ExecuteCommand("netplan", "generate")
+	if err != nil {
+		logger.Error(err, "Netplan Config error")
+		netConfig.Status.Error = err.Error()
+		netConfig.Status.Applied = false
+		r.Status().Update(ctx, netConfig)
+		return reconcile.Result{}, err
+	} else {
+		_, err = netplanbin.RunWithNsenter("netplan", "apply")
+		if err != nil {
+			logger.Error(err, "Netplan Apply error")
+			return reconcile.Result{}, err
+		}
 	}
 
 	logger.Info("Network configuration applied successfully", "file", filePath)

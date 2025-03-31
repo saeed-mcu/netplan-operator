@@ -47,10 +47,14 @@ make docker-build
 
 Push to docker registry
 ```bash
-make docker push
+make docker-push
 ```
 
 With the Operator image accessible (and the public image name defined in an environment variable or modified in Makefile), all that is required to run the Operator in a cluster now:
 ```bash
 make deploy
+```
+To remove the current Operator installation:
+```bash
+make undeploy
 ```
