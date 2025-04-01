@@ -25,7 +25,12 @@ import (
 
 // NetplanConfigSpec defines the desired state of NetplanConfig
 type NetplanConfigSpec struct {
-	// NetworkConfig is sample netplan config
+	// NodeSelector is a selector which must be true for the policy to be applied to the node.
+	// Selector which must match a node's labels for the policy to be scheduled on that node.
+	// +optional
+	NodeName string `json:"nodeName,omitempty"`
+
+	// The desired configuration of the policy
 	NetworkConfig string `json:"networkConfig,omitempty"`
 }
 

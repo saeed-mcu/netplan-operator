@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -59,12 +60,12 @@ type NetplanConfigReconciler struct {
 func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 
 	logger := log.FromContext(ctx)
+	nodeName := os.Getenv("NODE_NAME")
 
 	_, err := netplanbin.ExecuteCommand("netplan", "info")
 	if err != nil {
-		logger.Info("failed retrieving netplan info")
-		//logger.Error(err, "failed retrieving netplan info")
-		//return ctrl.Result{}, err
+		logger.Error(err, "failed retrieving netplan info")
+		return ctrl.Result{}, err
 	}
 
 	// Write the network configuration to a file
@@ -94,6 +95,11 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
+	if netConfig.Spec.NodeName != nodeName {
+		logger.Info("Node Selector not matched")
+		return ctrl.Result{}, nil
+	}
+
 	err = file.WriteConfigToFile(filePath, netConfig.Spec.NetworkConfig)
 	if err != nil {
 		logger.Error(err, "Failed to write network config to file", "path", filePath)
@@ -118,7 +124,8 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	logger.Info("Network configuration applied successfully", "file", filePath)
+	logger.Info("Network configuration applied successfully")
+
 	return ctrl.Result{}, nil
 }
 
