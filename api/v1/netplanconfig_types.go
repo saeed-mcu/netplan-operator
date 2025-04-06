@@ -20,6 +20,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	ReasonCRNotAvailable          = "OperatorResourceNotAvailable"
+	ReasonDeploymentNotAvailable  = "OperandDeploymentNotAvailable"
+	ReasonOperandDeploymentFailed = "OperandDeploymentFailed"
+	ReasonSucceeded               = "OperatorSucceeded"
+)
+
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
@@ -36,6 +43,9 @@ type NetplanConfigSpec struct {
 
 // NetplanConfigStatus defines the observed state of NetplanConfig
 type NetplanConfigStatus struct {
+	// Conditions is the list of status condition updates
+	Conditions []metav1.Condition `json:"conditions"`
+
 	Applied bool   `json:"applied,omitempty"`
 	Error   string `json:"error,omitempty"`
 }
