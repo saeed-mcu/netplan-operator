@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -91,11 +92,14 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		return ctrl.Result{}, nil
 	} else if err != nil {
-		logger.Error(err, "Error getting operator CE object")
+		logger.Error(err, "Error getting operator CR object")
 		return ctrl.Result{}, err
 	}
 
-	if netConfig.Spec.NodeName != nodeName {
+	if strings.EqualFold(nodeName, "all") || nodeName == "*" {
+		logger.Info("All node selected")
+
+	} else if netConfig.Spec.NodeName != nodeName {
 		logger.Info("Node Selector not matched")
 		return ctrl.Result{}, nil
 	}
