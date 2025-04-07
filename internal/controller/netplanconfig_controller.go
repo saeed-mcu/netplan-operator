@@ -113,7 +113,7 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		logger.Info("All node selected")
 
 	} else if netConfig.Spec.NodeName != nodeName {
-		logger.Info("Node Selector not matched")
+		logger.Info("Node Selector not matched", "CRD", netConfig.Spec.NodeName, "nodeName", nodeName)
 		return ctrl.Result{}, nil
 	}
 
