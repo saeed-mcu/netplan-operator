@@ -53,7 +53,7 @@ type NetplanConfigStatus struct {
 	Conditions []metav1.Condition `json:"conditions"`
 
 	Applied string `json:"applied,omitempty"`
-	State   string `json:"error,omitempty"`
+	State   string `json:"state,omitempty"`
 }
 
 // +kubebuilder:object:root=true
