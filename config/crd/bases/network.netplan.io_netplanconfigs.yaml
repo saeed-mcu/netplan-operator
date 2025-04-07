@@ -14,7 +14,17 @@ spec:
     singular: netplanconfig
   scope: Namespaced
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .status.applied
+      name: Applied
+      type: integer
+    - jsonPath: .status.state
+      name: State
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
     schema:
       openAPIV3Schema:
         description: NetplanConfig is the Schema for the netplanconfigs API
@@ -52,7 +62,7 @@ spec:
             description: NetplanConfigStatus defines the observed state of NetplanConfig
             properties:
               applied:
-                type: boolean
+                type: string
               conditions:
                 description: Conditions is the list of status condition updates
                 items:

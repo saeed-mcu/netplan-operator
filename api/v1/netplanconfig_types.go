@@ -23,6 +23,7 @@ import (
 const (
 	NoError    = "Done Successfully"
 	Processing = "Processing"
+	NotMatch   = "No matching nodes"
 )
 
 const (
@@ -51,15 +52,14 @@ type NetplanConfigStatus struct {
 	// Conditions is the list of status condition updates
 	Conditions []metav1.Condition `json:"conditions"`
 
-	Applied bool   `json:"applied,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Applied string `json:"applied,omitempty"`
+	State   string `json:"error,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Applied",type=integer,JSONPath=`.status.applied`
-// +kubebuilder:printcolumn:name="Error",type=string,JSONPath=`.status.error`
+// +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.status.state`
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // NetplanConfig is the Schema for the netplanconfigs API

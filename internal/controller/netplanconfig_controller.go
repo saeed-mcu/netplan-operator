@@ -109,21 +109,21 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, netConfig)})
 	}
 
+	netConfig.Status.Applied = "False"
+	netConfig.Status.State = networkv1.Processing
+
 	if strings.EqualFold(netConfig.Spec.NodeName, "all") || netConfig.Spec.NodeName == "*" {
 		logger.Info("All node selected")
 	} else if netConfig.Spec.NodeName != nodeName {
+		netConfig.Status.State = networkv1.NotMatch
 		logger.Info("Node Selector not matched", "CRD", netConfig.Spec.NodeName, "nodeName", nodeName)
 		return ctrl.Result{}, nil
 	}
 
-	netConfig.Status.Applied = false
-	netConfig.Status.Error = networkv1.Processing
-
 	err = file.WriteConfigToFile(filePath, netConfig.Spec.NetworkConfig)
 	if err != nil {
 		logger.Error(err, "Failed to write network config to file", "path", filePath)
-		netConfig.Status.Error = err.Error()
-		netConfig.Status.Applied = false
+		netConfig.Status.State = err.Error()
 		r.Status().Update(ctx, netConfig)
 		return reconcile.Result{}, err
 	}
@@ -131,8 +131,7 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	_, err = netplanbin.ExecuteCommand("netplan", "generate")
 	if err != nil {
 		logger.Error(err, "Netplan Config error")
-		netConfig.Status.Error = err.Error()
-		netConfig.Status.Applied = false
+		netConfig.Status.State = err.Error()
 		r.Status().Update(ctx, netConfig)
 		return reconcile.Result{}, err
 	} else {
@@ -151,8 +150,8 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		Message:            "Operator successfully reconciling",
 	})
 
-	netConfig.Status.Applied = true
-	netConfig.Status.Error = networkv1.NoError
+	netConfig.Status.Applied = "True"
+	netConfig.Status.State = networkv1.NoError
 	return ctrl.Result{}, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, netConfig)})
 }
 
