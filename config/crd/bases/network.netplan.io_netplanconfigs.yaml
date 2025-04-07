@@ -120,7 +120,7 @@ spec:
                   - type
                   type: object
                 type: array
-              error:
+              state:
                 type: string
             required:
             - conditions
