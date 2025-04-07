@@ -21,6 +21,11 @@ import (
 )
 
 const (
+	NoError    = "Done Successfully"
+	Processing = "Processing"
+)
+
+const (
 	ReasonCRNotAvailable          = "OperatorResourceNotAvailable"
 	ReasonDeploymentNotAvailable  = "OperandDeploymentNotAvailable"
 	ReasonOperandDeploymentFailed = "OperandDeploymentFailed"
@@ -52,6 +57,10 @@ type NetplanConfigStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Applied",type=integer,JSONPath=`.status.applied`
+// +kubebuilder:printcolumn:name="Error",type=string,JSONPath=`.status.error`
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // NetplanConfig is the Schema for the netplanconfigs API
 type NetplanConfig struct {

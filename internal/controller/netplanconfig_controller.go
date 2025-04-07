@@ -116,6 +116,9 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
+	netConfig.Status.Applied = false
+	netConfig.Status.Error = networkv1.Processing
+
 	err = file.WriteConfigToFile(filePath, netConfig.Spec.NetworkConfig)
 	if err != nil {
 		logger.Error(err, "Failed to write network config to file", "path", filePath)
@@ -148,6 +151,8 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		Message:            "Operator successfully reconciling",
 	})
 
+	netConfig.Status.Applied = true
+	netConfig.Status.Error = networkv1.NoError
 	return ctrl.Result{}, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, netConfig)})
 }
 
