@@ -78,7 +78,7 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	//logger.Info("NetplanPath", "NetplanPath", r.Config.NetplanPath)
 	//filePath := filepath.Join(r.Config.NetplanPath, fmt.Sprintf("%s.yaml", req.Name))
 	filePath := filepath.Join("/etc/netplan", fmt.Sprintf("%s.yaml", req.Name))
-	logger.Info("Start Reconcileing", "filePath", filePath)
+	//logger.Info("Start Reconcileing", "filePath", filePath)
 
 	netConfig := &networkv1.NetplanConfig{}
 	err = r.Get(ctx, req.NamespacedName, netConfig)
@@ -109,9 +109,8 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, netConfig)})
 	}
 
-	if strings.EqualFold(nodeName, "all") || nodeName == "*" {
+	if strings.EqualFold(netConfig.Spec.NodeName, "all") || netConfig.Spec.NodeName == "*" {
 		logger.Info("All node selected")
-
 	} else if netConfig.Spec.NodeName != nodeName {
 		logger.Info("Node Selector not matched", "CRD", netConfig.Spec.NodeName, "nodeName", nodeName)
 		return ctrl.Result{}, nil
