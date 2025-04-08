@@ -109,16 +109,23 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, netConfig)})
 	}
 
-	netConfig.Status.Applied = "False"
+	netConfig.Status.Applied = false
 	netConfig.Status.State = networkv1.Processing
 
 	if strings.EqualFold(netConfig.Spec.NodeName, "all") || netConfig.Spec.NodeName == "*" {
 		logger.Info("All node selected")
 	} else if netConfig.Spec.NodeName != nodeName {
+
+		meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
+			Type:               "OperatorDegraded",
+			Status:             metav1.ConditionTrue,
+			Reason:             networkv1.ReasonOperandDeploymentFailed,
+			LastTransitionTime: metav1.NewTime(time.Now()),
+			Message:            "Node Selector not matched",
+		})
 		netConfig.Status.State = networkv1.NotMatch
-		r.Status().Update(ctx, netConfig)
 		logger.Info("Node Selector not matched", "CRD", netConfig.Spec.NodeName, "nodeName", nodeName)
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, netConfig)})
 	}
 
 	err = file.WriteConfigToFile(filePath, netConfig.Spec.NetworkConfig)
@@ -151,7 +158,7 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		Message:            "Operator successfully reconciling",
 	})
 
-	netConfig.Status.Applied = "True"
+	netConfig.Status.Applied = true
 	netConfig.Status.State = networkv1.NoError
 	return ctrl.Result{}, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, netConfig)})
 }

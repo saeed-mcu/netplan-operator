@@ -17,7 +17,7 @@ spec:
   - additionalPrinterColumns:
     - jsonPath: .status.applied
       name: Applied
-      type: integer
+      type: bool
     - jsonPath: .status.state
       name: State
       type: string
@@ -62,7 +62,7 @@ spec:
             description: NetplanConfigStatus defines the observed state of NetplanConfig
             properties:
               applied:
-                type: string
+                type: boolean
               conditions:
                 description: Conditions is the list of status condition updates
                 items:
