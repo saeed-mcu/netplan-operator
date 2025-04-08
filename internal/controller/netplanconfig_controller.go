@@ -109,8 +109,9 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, netConfig)})
 	}
 
-	netConfig.Status.Applied = false
+	netConfig.Status.Applied = "False"
 	netConfig.Status.State = networkv1.Processing
+	r.Status().Update(ctx, netConfig)
 
 	if strings.EqualFold(netConfig.Spec.NodeName, "all") || netConfig.Spec.NodeName == "*" {
 		logger.Info("All node selected")
@@ -158,7 +159,7 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		Message:            "Operator successfully reconciling",
 	})
 
-	netConfig.Status.Applied = true
+	netConfig.Status.Applied = "True"
 	netConfig.Status.State = networkv1.NoError
 	return ctrl.Result{}, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, netConfig)})
 }
