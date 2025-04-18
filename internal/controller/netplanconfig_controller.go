@@ -136,8 +136,19 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	_, err = netplanbin.ExecuteCommand("netplan", "generate")
 	if err != nil {
-		logger.Error(err, "Netplan generate error")
+
+		netConfig.Status.Applied = "False"
 		netConfig.Status.State = err.Error()
+
+		meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
+			Type:               "OperatorDegraded",
+			Status:             metav1.ConditionTrue,
+			Reason:             networkv1.ReasonOperandDeploymentFailed,
+			LastTransitionTime: metav1.NewTime(time.Now()),
+			Message:            "Operator Failed",
+		})
+
+		logger.Error(err, "Netplan generate error")
 		r.Status().Update(ctx, netConfig)
 		return reconcile.Result{}, nil
 	} else {
@@ -145,7 +156,7 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 
 			netConfig.Status.Applied = "False"
-			netConfig.Status.State = networkv1.NetplanErr
+			netConfig.Status.State = err.Error()
 
 			meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
 				Type:               "OperatorDegraded",
