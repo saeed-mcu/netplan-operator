@@ -62,7 +62,7 @@ spec:
             description: NetplanConfigStatus defines the observed state of NetplanConfig
             properties:
               applied:
-                type: boolean
+                type: string
               conditions:
                 description: Conditions is the list of status condition updates
                 items:

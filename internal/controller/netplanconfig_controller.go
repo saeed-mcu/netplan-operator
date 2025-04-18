@@ -70,8 +70,8 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	_, err := netplanbin.ExecuteCommand("netplan", "info")
 	if err != nil {
-		logger.Error(err, "failed retrieving netplan info")
-		return ctrl.Result{}, err
+		// logger.Error(err, "failed retrieving netplan info")
+		// return ctrl.Result{}, err
 	}
 
 	// Write the network configuration to a file
@@ -98,35 +98,35 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	} else if err != nil {
 
-		meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
-			Type:               "OperatorDegraded",
-			Status:             metav1.ConditionTrue,
-			Reason:             networkv1.ReasonDeploymentNotAvailable,
-			LastTransitionTime: metav1.NewTime(time.Now()),
-			Message:            fmt.Sprintf("unable to get operator custom resource: %s", err.Error()),
-		})
-
+		//meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
+		//	Type:               "OperatorDegraded",
+		//	Status:             metav1.ConditionTrue,
+		//	Reason:             networkv1.ReasonDeploymentNotAvailable,
+		//	LastTransitionTime: metav1.NewTime(time.Now()),
+		//	Message:            fmt.Sprintf("unable to get operator custom resource: %s", err.Error()),
+		//})
+		logger.Error(err, "unable to get operator custom resource")
 		return ctrl.Result{}, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, netConfig)})
 	}
 
 	netConfig.Status.Applied = "False"
 	netConfig.Status.State = networkv1.Processing
-	r.Status().Update(ctx, netConfig)
 
 	if strings.EqualFold(netConfig.Spec.NodeName, "all") || netConfig.Spec.NodeName == "*" {
 		logger.Info("All node selected")
 	} else if netConfig.Spec.NodeName != nodeName {
 
-		meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
-			Type:               "OperatorDegraded",
-			Status:             metav1.ConditionTrue,
-			Reason:             networkv1.ReasonOperandDeploymentFailed,
-			LastTransitionTime: metav1.NewTime(time.Now()),
-			Message:            "Node Selector not matched",
-		})
+		//meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
+		//	Type:               "OperatorDegraded",
+		//	Status:             metav1.ConditionTrue,
+		//	Reason:             networkv1.ReasonOperandDeploymentFailed,
+		//	LastTransitionTime: metav1.NewTime(time.Now()),
+		//	Message:            "Node Selector not matched",
+		//})
 		netConfig.Status.State = networkv1.NotMatch
 		logger.Info("Node Selector not matched", "CRD", netConfig.Spec.NodeName, "nodeName", nodeName)
-		return ctrl.Result{}, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, netConfig)})
+		r.Status().Update(ctx, netConfig)
+		return ctrl.Result{}, nil
 	}
 
 	err = file.WriteConfigToFile(filePath, netConfig.Spec.NetworkConfig)
@@ -139,15 +139,15 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	_, err = netplanbin.ExecuteCommand("netplan", "generate")
 	if err != nil {
-		logger.Error(err, "Netplan Config error")
+		logger.Error(err, "Netplan generate error")
 		netConfig.Status.State = err.Error()
 		r.Status().Update(ctx, netConfig)
-		return reconcile.Result{}, err
+		return reconcile.Result{}, nil
 	} else {
 		_, err = netplanbin.RunWithNsenter("netplan", "apply")
 		if err != nil {
 			logger.Error(err, "Netplan Apply error")
-			return reconcile.Result{}, err
+			return reconcile.Result{}, nil
 		}
 	}
 
@@ -161,6 +161,7 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	netConfig.Status.Applied = "True"
 	netConfig.Status.State = networkv1.NoError
+	logger.Info("Apply Netplan Done !!!")
 	return ctrl.Result{}, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, netConfig)})
 }
 
