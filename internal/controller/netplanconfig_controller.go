@@ -109,9 +109,6 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, netConfig)})
 	}
 
-	netConfig.Status.Applied = "False"
-	netConfig.Status.State = networkv1.Processing
-
 	if strings.EqualFold(netConfig.Spec.NodeName, "all") || netConfig.Spec.NodeName == "*" {
 		logger.Info("All node selected")
 	} else if netConfig.Spec.NodeName != nodeName {
@@ -146,6 +143,18 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	} else {
 		_, err = netplanbin.RunWithNsenter("netplan", "apply")
 		if err != nil {
+
+			netConfig.Status.Applied = "False"
+			netConfig.Status.State = networkv1.NetplanErr
+
+			meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
+				Type:               "OperatorDegraded",
+				Status:             metav1.ConditionTrue,
+				Reason:             networkv1.ReasonOperandDeploymentFailed,
+				LastTransitionTime: metav1.NewTime(time.Now()),
+				Message:            "Operator Failed",
+			})
+
 			logger.Error(err, "Netplan Apply error")
 			return reconcile.Result{}, nil
 		}
