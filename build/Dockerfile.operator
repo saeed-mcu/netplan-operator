@@ -1,0 +1,26 @@
+FROM registry.access.redhat.com/ubi9/ubi AS build
+ARG GO_VERSION=1.18
+
+COPY . .
+
+RUN ./build/install-go.sh ${GO_VERSION}
+ENV PATH=/usr/local/go/bin/:$PATH
+
+
+RUN --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=false go build -o manager ./cmd/operator
+
+FROM registry.access.redhat.com/ubi9/ubi-minimal
+
+COPY --from=build /manager /usr/local/bin/manager
+
+COPY deploy/crds/nmstate.io_nodenetwork*.yaml   /bindata/kubernetes-nmstate/crds/
+COPY deploy/handler/namespace.yaml              /bindata/kubernetes-nmstate/namespace/
+COPY deploy/handler/operator.yaml               /bindata/kubernetes-nmstate/handler/handler.yaml
+COPY deploy/handler/service_account.yaml        /bindata/kubernetes-nmstate/rbac/
+COPY deploy/handler/role.yaml                   /bindata/kubernetes-nmstate/rbac/
+COPY deploy/handler/role_binding.yaml           /bindata/kubernetes-nmstate/rbac/
+COPY deploy/handler/cluster_role.yaml           /bindata/kubernetes-nmstate/rbac/
+
+USER 1000
+
+ENTRYPOINT ["manager"]

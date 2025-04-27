@@ -21,25 +21,26 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
-	"time"
+	goruntime "runtime"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
+	"github.com/pkg/errors"
+	rbac "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/saeed-mcu/netplan-operator/api/names"
 	networkv1 "github.com/saeed-mcu/netplan-operator/api/v1"
-
 	netplanbin "github.com/saeed-mcu/netplan-operator/pkg/client"
-	"github.com/saeed-mcu/netplan-operator/pkg/file"
+	nmstaterenderer "github.com/saeed-mcu/netplan-operator/pkg/render"
+	corev1 "k8s.io/api/core/v1"
 
+	"github.com/openshift/cluster-network-operator/pkg/render"
 	"github.com/saeed-mcu/netplan-operator/pkg/config"
 )
 
@@ -66,7 +67,7 @@ type NetplanConfigReconciler struct {
 func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 
 	logger := log.FromContext(ctx)
-	nodeName := os.Getenv("NODE_NAME")
+	//nodeName := os.Getenv("NODE_NAME")
 
 	_, err := netplanbin.ExecuteCommand("netplan", "info")
 	if err != nil {
@@ -74,115 +75,34 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		// return ctrl.Result{}, err
 	}
 
-	// Write the network configuration to a file
-	//logger.Info("NetplanPath", "NetplanPath", r.Config.NetplanPath)
-	//filePath := filepath.Join(r.Config.NetplanPath, fmt.Sprintf("%s.yaml", req.Name))
-	filePath := filepath.Join("/etc/netplan", fmt.Sprintf("%s.yaml", req.Name))
-	//logger.Info("Start Reconcileing", "filePath", filePath)
-
-	netConfig := &networkv1.NetplanConfig{}
-	err = r.Get(ctx, req.NamespacedName, netConfig)
-	if err != nil && errors.IsNotFound(err) {
-		err = file.RemoveConfigFile(filePath)
-		if err != nil {
-			// TODO:
-			logger.Error(err, "Error Delete File")
-		} else {
-			_, err = netplanbin.RunWithNsenter("netplan", "apply")
-			if err != nil {
-				logger.Error(err, "Netplan Apply error")
-				return reconcile.Result{}, err
-			}
-			logger.Info("Netplan cleanup done")
-		}
-		return ctrl.Result{}, nil
-	} else if err != nil {
-
-		//meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
-		//	Type:               "OperatorDegraded",
-		//	Status:             metav1.ConditionTrue,
-		//	Reason:             networkv1.ReasonDeploymentNotAvailable,
-		//	LastTransitionTime: metav1.NewTime(time.Now()),
-		//	Message:            fmt.Sprintf("unable to get operator custom resource: %s", err.Error()),
-		//})
-		logger.Error(err, "unable to get operator custom resource")
-		return ctrl.Result{}, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, netConfig)})
-	}
-
-	if strings.EqualFold(netConfig.Spec.NodeName, "all") || netConfig.Spec.NodeName == "*" {
-		logger.Info("All node selected")
-	} else if netConfig.Spec.NodeName != nodeName {
-
-		//meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
-		//	Type:               "OperatorDegraded",
-		//	Status:             metav1.ConditionTrue,
-		//	Reason:             networkv1.ReasonOperandDeploymentFailed,
-		//	LastTransitionTime: metav1.NewTime(time.Now()),
-		//	Message:            "Node Selector not matched",
-		//})
-		netConfig.Status.State = networkv1.NotMatch
-		logger.Info("Node Selector not matched", "CRD", netConfig.Spec.NodeName, "nodeName", nodeName)
-		r.Status().Update(ctx, netConfig)
-		return ctrl.Result{}, nil
-	}
-
-	err = file.WriteConfigToFile(filePath, netConfig.Spec.NetworkConfig)
+	// Fetch the NMState instance
+	instanceList := &networkv1.NetplanConfigList{}
+	err = r.List(context.TODO(), instanceList, &client.ListOptions{})
 	if err != nil {
-		logger.Error(err, "Failed to write network config to file", "path", filePath)
-		netConfig.Status.State = err.Error()
-		r.Status().Update(ctx, netConfig)
-		return reconcile.Result{}, err
+		return ctrl.Result{}, errors.Wrap(err, "failed listing all NMState instances")
 	}
 
-	_, err = netplanbin.ExecuteCommand("netplan", "generate")
+	instance := &networkv1.NetplanConfig{}
+	err = r.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
-
-		netConfig.Status.Applied = "False"
-		netConfig.Status.State = err.Error()
-
-		meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
-			Type:               "OperatorDegraded",
-			Status:             metav1.ConditionTrue,
-			Reason:             networkv1.ReasonOperandDeploymentFailed,
-			LastTransitionTime: metav1.NewTime(time.Now()),
-			Message:            "Operator Failed",
-		})
-
-		logger.Error(err, "Netplan generate error")
-		r.Status().Update(ctx, netConfig)
-		return reconcile.Result{}, nil
-	} else {
-		_, err = netplanbin.RunWithNsenter("netplan", "apply")
-		if err != nil {
-
-			netConfig.Status.Applied = "False"
-			netConfig.Status.State = err.Error()
-
-			meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
-				Type:               "OperatorDegraded",
-				Status:             metav1.ConditionTrue,
-				Reason:             networkv1.ReasonOperandDeploymentFailed,
-				LastTransitionTime: metav1.NewTime(time.Now()),
-				Message:            "Operator Failed",
-			})
-
-			logger.Error(err, "Netplan Apply error")
-			return reconcile.Result{}, nil
+		if apierrors.IsNotFound(err) {
+			// Request object not found, could have been deleted after reconcile req.
+			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
+			// Return and don't requeue
+			logger.Info("Request object not found")
+			return ctrl.Result{}, nil
 		}
+		// Error reading the object - requeue the req.
+		logger.Info("Error reading the object")
+		return ctrl.Result{}, err
 	}
 
-	meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
-		Type:               "OperatorDegraded",
-		Status:             metav1.ConditionTrue,
-		Reason:             networkv1.ReasonSucceeded,
-		LastTransitionTime: metav1.NewTime(time.Now()),
-		Message:            "Operator successfully reconciling",
-	})
+	if err := r.applyManifests(instance, ctx); err != nil {
+		return ctrl.Result{}, err
+	}
 
-	netConfig.Status.Applied = "True"
-	netConfig.Status.State = networkv1.NoError
-	logger.Info("Apply Netplan Done !!!")
-	return ctrl.Result{}, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, netConfig)})
+	logger.Info("Reconcile complete.")
+	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -190,4 +110,234 @@ func (r *NetplanConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&networkv1.NetplanConfig{}).
 		Complete(r)
+}
+
+func (r *NetplanConfigReconciler) applyManifests(instance *networkv1.NetplanConfig, ctx context.Context) error {
+	if err := r.applyCRDs(instance); err != nil {
+		errors.Wrap(err, "failed applying CRDs")
+		return err
+	}
+
+	if err := r.applyNamespace(instance); err != nil {
+		errors.Wrap(err, "failed applying Namespace")
+		return err
+	}
+
+	if err := r.applyRBAC(instance); err != nil {
+		errors.Wrap(err, "failed applying RBAC")
+		return err
+	}
+
+	if err := r.applyHandler(instance); err != nil {
+		errors.Wrap(err, "failed applying Handler")
+		return err
+	}
+
+	return nil
+}
+
+func (r *NetplanConfigReconciler) applyCRDs(instance *networkv1.NetplanConfig) error {
+	data := render.MakeRenderData()
+	return r.renderAndApply(instance, data, "crds", false)
+}
+
+func (r *NetplanConfigReconciler) applyNamespace(instance *networkv1.NetplanConfig) error {
+	data := render.MakeRenderData()
+	data.Data["HandlerNamespace"] = os.Getenv("HANDLER_NAMESPACE")
+	data.Data["HandlerPrefix"] = os.Getenv("HANDLER_PREFIX")
+	return r.renderAndApply(instance, data, "namespace", false)
+}
+
+func (r *NetplanConfigReconciler) applyRBAC(instance *networkv1.NetplanConfig) error {
+	data := render.MakeRenderData()
+	data.Data["HandlerNamespace"] = os.Getenv("HANDLER_NAMESPACE")
+	data.Data["HandlerImage"] = os.Getenv("RELATED_IMAGE_HANDLER_IMAGE")
+	data.Data["HandlerPullPolicy"] = os.Getenv("HANDLER_IMAGE_PULL_POLICY")
+	data.Data["HandlerPrefix"] = os.Getenv("HANDLER_PREFIX")
+
+	if err := setClusterReaderExist(r.Client, data); err != nil {
+		return errors.Wrap(err, "failed checking if cluster-reader ClusterRole exists")
+	}
+
+	return r.renderAndApply(instance, data, "rbac", true)
+}
+
+// nolint: funlen
+func (r *NetplanConfigReconciler) applyHandler(instance *networkv1.NetplanConfig) error {
+	data := render.MakeRenderData()
+	// Register ToYaml template method
+	data.Funcs["toYaml"] = nmstaterenderer.ToYaml
+	// Prepare defaults
+	masterExistsNoScheduleTolerations := []corev1.Toleration{
+		{
+			Key:      "node-role.kubernetes.io/master",
+			Operator: corev1.TolerationOpExists,
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
+		{
+			Key:      "node-role.kubernetes.io/control-plane",
+			Operator: corev1.TolerationOpExists,
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
+	}
+	operatorExistsToleration := corev1.Toleration{
+		Key:      "",
+		Operator: corev1.TolerationOpExists,
+	}
+	archNodeSelector := map[string]string{
+		"kubernetes.io/arch": goruntime.GOARCH,
+	}
+	archAndCRNodeSelector := instance.Spec.NodeSelector
+	if archAndCRNodeSelector == nil {
+		archAndCRNodeSelector = map[string]string{
+			"kubernetes.io/arch": goruntime.GOARCH,
+			"kubernetes.io/os":   "linux",
+		}
+	}
+	handlerTolerations := instance.Spec.Tolerations
+	if handlerTolerations == nil {
+		handlerTolerations = []corev1.Toleration{operatorExistsToleration}
+	}
+	handlerAffinity := instance.Spec.Affinity
+	if handlerAffinity == nil {
+		handlerAffinity = &corev1.Affinity{}
+	}
+
+	archAndCRInfraNodeSelector := instance.Spec.InfraNodeSelector
+	if archAndCRInfraNodeSelector == nil {
+		archAndCRInfraNodeSelector = archNodeSelector
+	} else {
+		archAndCRInfraNodeSelector["kubernetes.io/arch"] = goruntime.GOARCH
+	}
+
+	infraTolerations := instance.Spec.InfraTolerations
+	if infraTolerations == nil {
+		infraTolerations = masterExistsNoScheduleTolerations
+	}
+
+	infraAffinity := instance.Spec.InfraAffinity
+	if infraAffinity == nil {
+		infraAffinity = &corev1.Affinity{
+			NodeAffinity: &corev1.NodeAffinity{
+				PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
+					{
+						Weight: 10,
+						Preference: corev1.NodeSelectorTerm{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "node-role.kubernetes.io/control-plane",
+									Operator: corev1.NodeSelectorOpExists,
+								},
+							},
+						},
+					},
+					{
+						Weight: 1,
+						Preference: corev1.NodeSelectorTerm{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "node-role.kubernetes.io/master",
+									Operator: corev1.NodeSelectorOpExists,
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	data.Data["HandlerNamespace"] = os.Getenv("HANDLER_NAMESPACE")
+	data.Data["HandlerImage"] = os.Getenv("RELATED_IMAGE_HANDLER_IMAGE")
+	data.Data["HandlerPullPolicy"] = os.Getenv("HANDLER_IMAGE_PULL_POLICY")
+	data.Data["HandlerPrefix"] = os.Getenv("HANDLER_PREFIX")
+	data.Data["MonitoringNamespace"] = os.Getenv("MONITORING_NAMESPACE")
+	data.Data["KubeRBACProxyImage"] = os.Getenv("KUBE_RBAC_PROXY_IMAGE")
+	data.Data["InfraNodeSelector"] = archAndCRInfraNodeSelector
+	data.Data["InfraTolerations"] = infraTolerations
+	data.Data["WebhookAffinity"] = infraAffinity
+	data.Data["HandlerNodeSelector"] = archAndCRNodeSelector
+	data.Data["HandlerTolerations"] = handlerTolerations
+	data.Data["HandlerAffinity"] = handlerAffinity
+
+	return r.renderAndApply(instance, data, "handler", true)
+}
+
+func (r *NetplanConfigReconciler) renderAndApply(
+	instance *networkv1.NetplanConfig,
+	data render.RenderData,
+	sourceDirectory string,
+	setControllerReference bool,
+) error {
+	var err error
+
+	sourceFullDirectory := filepath.Join(names.ManifestDir, "kubernetes-nmstate", sourceDirectory)
+	objs, err := render.RenderDir(sourceFullDirectory, &data)
+	if err != nil {
+		return errors.Wrapf(err, "failed to render kubernetes-nmstate %s", sourceDirectory)
+	}
+
+	// If no file found in directory - return error
+	if len(objs) == 0 {
+		return fmt.Errorf("no manifests rendered from %s", sourceFullDirectory)
+	}
+
+	for _, obj := range objs {
+		// RenderDir seems to add an extra null entry to the list. It appears to be because of the
+		// nested templates. This just makes sure we don't try to apply an empty obj.
+		if obj.GetName() == "" {
+			continue
+		}
+		if setControllerReference {
+			// Set the controller reference. When the CR is removed, it will remove the CRDs as well
+			err = controllerutil.SetControllerReference(instance, obj, r.Scheme)
+			if err != nil {
+				return errors.Wrap(err, "failed to set owner reference")
+			}
+		}
+		if err := r.apply(context.TODO(), obj); err != nil {
+			return fmt.Errorf("failed to apply object %v: %w", obj, err)
+		}
+	}
+	return nil
+}
+
+func (r *NetplanConfigReconciler) apply(ctx context.Context, newObj *unstructured.Unstructured) error {
+	key := client.ObjectKeyFromObject(newObj)
+
+	oldObj := &unstructured.Unstructured{}
+	oldObj.SetGroupVersionKind(newObj.GroupVersionKind())
+	if err := r.Client.Get(ctx, key, oldObj); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+		if err := r.Client.Create(ctx, newObj); err != nil {
+			return fmt.Errorf("failed creating %q \"%s:%s: %w", newObj.GetKind(), newObj.GetNamespace(), newObj.GetName(), err)
+		}
+		return nil
+	}
+
+	newObj.SetResourceVersion(oldObj.GetResourceVersion())
+	if err := r.Client.Patch(ctx, newObj, client.MergeFrom(oldObj)); err != nil {
+		return fmt.Errorf("failed patching %q \"%s:%s: %w", newObj.GetKind(), newObj.GetNamespace(), newObj.GetName(), err)
+	}
+
+	return nil
+}
+
+func setClusterReaderExist(c client.Client, data render.RenderData) error {
+	var clusterReader rbac.ClusterRole
+	key := types.NamespacedName{Name: "cluster-reader"}
+	err := c.Get(context.TODO(), key, &clusterReader)
+
+	found := true
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+		found = false
+	}
+
+	data.Data["ClusterReaderExists"] = found
+	return nil
 }

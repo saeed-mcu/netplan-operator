@@ -17,6 +17,7 @@ limitations under the License.
 package v1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -46,6 +47,33 @@ type NetplanConfigSpec struct {
 
 	// The desired configuration of the policy
 	NetworkConfig string `json:"networkConfig,omitempty"`
+
+	// Affinity is an optional affinity selector that will be added to handler DaemonSet manifest.
+	// +optional
+	Affinity *corev1.Affinity `json:"affinity,omitempty"`
+	// InfraAffinity is an optional affinity selector that will be added to webhook, metrics & console-plugin Deployment manifests.
+	// +optional
+	InfraAffinity *corev1.Affinity `json:"infraAffinity,omitempty"`
+	// NodeSelector is an optional selector that will be added to handler DaemonSet manifest
+	// for both workers and control-plane (https://github.com/nmstate/kubernetes-nmstate/blob/main/deploy/handler/operator.yaml).
+	// If NodeSelector is specified, the handler will run only on nodes that have each of the indicated key-value pairs
+	// as labels applied to the node.
+	// +optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+	// Tolerations is an optional list of tolerations to be added to handler DaemonSet manifest
+	// If Tolerations is specified, the handler daemonset will be also scheduled on nodes with corresponding taints
+	// +optional
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+	// InfraNodeSelector is an optional selector that will be added to webhook, metrics & console-plugin Deployment manifests
+	// If InfraNodeSelector is specified, the webhook, metrics and the console plugin will run only on nodes that have each
+	// of the indicated key-value pairs as labels applied to the node.
+	// +optional
+	InfraNodeSelector map[string]string `json:"infraNodeSelector,omitempty"`
+	// InfraTolerations is an optional list of tolerations to be added to webhook, metrics & console-plugin Deployment manifests
+	// If InfraTolerations is specified, the webhook, metrics and the console plugin will be able to be scheduled on nodes with
+	// corresponding taints
+	// +optional
+	InfraTolerations []corev1.Toleration `json:"infraTolerations,omitempty"`
 }
 
 // NetplanConfigStatus defines the observed state of NetplanConfig
