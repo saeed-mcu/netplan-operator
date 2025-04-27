@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -41,6 +41,10 @@ import (
 	"github.com/saeed-mcu/netplan-operator/pkg/file"
 
 	"github.com/saeed-mcu/netplan-operator/pkg/config"
+)
+
+const (
+	finalizerName = "ae.digicloud/netplan"
 )
 
 // NetplanConfigReconciler reconciles a NetplanConfig object
@@ -98,31 +102,33 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	} else if err != nil {
 
-		//meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
-		//	Type:               "OperatorDegraded",
-		//	Status:             metav1.ConditionTrue,
-		//	Reason:             networkv1.ReasonDeploymentNotAvailable,
-		//	LastTransitionTime: metav1.NewTime(time.Now()),
-		//	Message:            fmt.Sprintf("unable to get operator custom resource: %s", err.Error()),
-		//})
 		logger.Error(err, "unable to get operator custom resource")
 		return ctrl.Result{}, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, netConfig)})
 	}
 
-	if strings.EqualFold(netConfig.Spec.NodeName, "all") || netConfig.Spec.NodeName == "*" {
-		logger.Info("All node selected")
-	} else if netConfig.Spec.NodeName != nodeName {
+	if netConfig.Spec.NodeName != nodeName {
+		logger.Info("Not for me, skip", "CRD", netConfig.Spec.NodeName, "nodeName", nodeName)
+		return ctrl.Result{}, nil
+	}
 
-		//meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
-		//	Type:               "OperatorDegraded",
-		//	Status:             metav1.ConditionTrue,
-		//	Reason:             networkv1.ReasonOperandDeploymentFailed,
-		//	LastTransitionTime: metav1.NewTime(time.Now()),
-		//	Message:            "Node Selector not matched",
-		//})
-		netConfig.Status.State = networkv1.NotMatch
-		logger.Info("Node Selector not matched", "CRD", netConfig.Spec.NodeName, "nodeName", nodeName)
-		r.Status().Update(ctx, netConfig)
+	// --- Handle Deletion ---
+	if !netConfig.ObjectMeta.DeletionTimestamp.IsZero() {
+		// Resource is being deleted
+		logger.Info("Resource is being deleted")
+		if controllerutil.ContainsFinalizer(netConfig, finalizerName) {
+			// Perform your cleanup logic here
+			//if err := r.cleanupResource(ctx, netConfig); err != nil {
+			//	return ctrl.Result{}, err
+			//}
+
+			logger.Info("Perform your cleanup logic")
+
+			// Remove finalizer to allow deletion
+			controllerutil.RemoveFinalizer(netConfig, finalizerName)
+			if err := r.Update(ctx, netConfig); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
 		return ctrl.Result{}, nil
 	}
 
@@ -178,6 +184,16 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		LastTransitionTime: metav1.NewTime(time.Now()),
 		Message:            "Operator successfully reconciling",
 	})
+
+	// Add finalizer if not present
+	if !controllerutil.ContainsFinalizer(netConfig, finalizerName) {
+		controllerutil.AddFinalizer(netConfig, finalizerName)
+		if err := r.Update(ctx, netConfig); err != nil {
+			return ctrl.Result{}, err
+		}
+		logger.Info("Finalizer added, requeue to continue processing !!!")
+		return ctrl.Result{Requeue: true}, nil
+	}
 
 	netConfig.Status.Applied = "True"
 	netConfig.Status.State = networkv1.NoError
