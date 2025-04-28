@@ -23,10 +23,10 @@ import (
 	"path/filepath"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -86,43 +86,30 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	netConfig := &networkv1.NetplanConfig{}
 	err = r.Get(ctx, req.NamespacedName, netConfig)
-	if err != nil && errors.IsNotFound(err) {
-		err = file.RemoveConfigFile(filePath)
-		if err != nil {
-			// TODO:
-			logger.Error(err, "Error Delete File")
-		} else {
-			_, err = netplanbin.RunWithNsenter("netplan", "apply")
-			if err != nil {
-				logger.Error(err, "Netplan Apply error")
-				return reconcile.Result{}, err
-			}
-			logger.Info("Netplan cleanup done")
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// Request object not found, could have been deleted after reconcile req.
+			logger.Info("Request object not found")
+			return ctrl.Result{}, nil
 		}
-		return ctrl.Result{}, nil
-	} else if err != nil {
 
-		logger.Error(err, "unable to get operator custom resource")
-		return ctrl.Result{}, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, netConfig)})
+		// Error reading the object - requeue the req.
+		logger.Info("Error reading the object")
+		return ctrl.Result{}, err
 	}
 
 	if netConfig.Spec.NodeName != nodeName {
-		logger.Info("Not for me, skip", "CRD", netConfig.Spec.NodeName, "nodeName", nodeName)
+		logger.Info("Not for me, skip")
 		return ctrl.Result{}, nil
 	}
 
 	// --- Handle Deletion ---
 	if !netConfig.ObjectMeta.DeletionTimestamp.IsZero() {
 		// Resource is being deleted
-		logger.Info("Resource is being deleted")
 		if controllerutil.ContainsFinalizer(netConfig, finalizerName) {
-			// Perform your cleanup logic here
-			//if err := r.cleanupResource(ctx, netConfig); err != nil {
-			//	return ctrl.Result{}, err
-			//}
-
-			logger.Info("Perform your cleanup logic")
-
+			if err := r.cleanupResource(ctx, netConfig, filePath); err != nil {
+				return ctrl.Result{}, err
+			}
 			// Remove finalizer to allow deletion
 			controllerutil.RemoveFinalizer(netConfig, finalizerName)
 			if err := r.Update(ctx, netConfig); err != nil {
@@ -206,4 +193,18 @@ func (r *NetplanConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&networkv1.NetplanConfig{}).
 		Complete(r)
+}
+
+func (r *NetplanConfigReconciler) cleanupResource(ctx context.Context, netConfig *networkv1.NetplanConfig, filePath string) error {
+
+	logger := log.FromContext(ctx)
+	logger.Info("Perform your cleanup logic")
+
+	err := file.RemoveConfigFile(filePath)
+	if err != nil {
+		// TODO:
+		logger.Error(err, "Error Delete File")
+	}
+
+	return nil
 }
