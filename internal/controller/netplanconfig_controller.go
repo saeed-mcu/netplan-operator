@@ -89,7 +89,6 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile req.
-			logger.Info("Request object not found")
 			return ctrl.Result{}, nil
 		}
 
@@ -99,7 +98,6 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if netConfig.Spec.NodeName != nodeName {
-		logger.Info("Not for me, skip")
 		return ctrl.Result{}, nil
 	}
 
@@ -118,6 +116,17 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		return ctrl.Result{}, nil
 	}
+
+	netConfig.Status.Applied = "False"
+	netConfig.Status.State = networkv1.Processing
+	meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
+		Type:               "OperatorDegraded",
+		Status:             metav1.ConditionTrue,
+		Reason:             networkv1.ReasonProcessing,
+		LastTransitionTime: metav1.NewTime(time.Now()),
+		Message:            "Operator Processing Configuration",
+	})
+	r.Status().Update(ctx, netConfig)
 
 	err = file.WriteConfigToFile(filePath, netConfig.Spec.NetworkConfig)
 	if err != nil {
@@ -144,6 +153,7 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		logger.Error(err, "Netplan generate error")
 		r.Status().Update(ctx, netConfig)
 		return reconcile.Result{}, nil
+
 	} else {
 		_, err = netplanbin.RunWithNsenter("netplan", "apply")
 		if err != nil {
@@ -178,7 +188,6 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if err := r.Update(ctx, netConfig); err != nil {
 			return ctrl.Result{}, err
 		}
-		logger.Info("Finalizer added, requeue to continue processing !!!")
 		return ctrl.Result{Requeue: true}, nil
 	}
 

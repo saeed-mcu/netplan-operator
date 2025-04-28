@@ -31,6 +31,7 @@ const (
 	ReasonCRNotAvailable          = "OperatorResourceNotAvailable"
 	ReasonDeploymentNotAvailable  = "OperandDeploymentNotAvailable"
 	ReasonOperandDeploymentFailed = "OperandDeploymentFailed"
+	ReasonProcessing              = "OperatorProcessingConfiguration"
 	ReasonSucceeded               = "OperatorSucceeded"
 )
 
