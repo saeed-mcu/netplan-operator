@@ -25,7 +25,6 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -117,17 +116,6 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
-	netConfig.Status.Applied = "False"
-	netConfig.Status.State = networkv1.Processing
-	meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
-		Type:               "OperatorDegraded",
-		Status:             metav1.ConditionTrue,
-		Reason:             networkv1.ReasonProcessing,
-		LastTransitionTime: metav1.NewTime(time.Now()),
-		Message:            "Operator Processing Configuration",
-	})
-	r.Status().Update(ctx, netConfig)
-
 	err = file.WriteConfigToFile(filePath, netConfig.Spec.NetworkConfig)
 	if err != nil {
 		logger.Error(err, "Failed to write network config to file", "path", filePath)
@@ -193,8 +181,9 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	netConfig.Status.Applied = "True"
 	netConfig.Status.State = networkv1.NoError
+	r.Status().Update(ctx, netConfig)
 	logger.Info("Apply Netplan Done !!!")
-	return ctrl.Result{}, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, netConfig)})
+	return ctrl.Result{Requeue: false}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
