@@ -196,7 +196,6 @@ func (r *NetplanConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *NetplanConfigReconciler) cleanupResource(ctx context.Context, netConfig *networkv1.NetplanConfig, filePath string) error {
 
 	logger := log.FromContext(ctx)
-	logger.Info("Perform your cleanup logic")
 
 	err := file.RemoveConfigFile(filePath)
 	if err != nil {
@@ -204,5 +203,6 @@ func (r *NetplanConfigReconciler) cleanupResource(ctx context.Context, netConfig
 		logger.Error(err, "Error Delete File")
 	}
 
+	logger.Info("Cleanup Done")
 	return nil
 }
