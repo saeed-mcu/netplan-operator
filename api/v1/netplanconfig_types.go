@@ -24,7 +24,7 @@ const (
 	NoError    = "Done Successfully"
 	Processing = "Processing"
 	NotMatch   = "No matching nodes"
-	NetplanErr = "Netplan Apply Failed"
+	NetplanErr = "Apply Failed"
 )
 
 const (
