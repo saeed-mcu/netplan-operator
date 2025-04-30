@@ -24,6 +24,7 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -32,6 +33,7 @@ import (
 
 	"github.com/saeed-mcu/netplan-operator/api/shared"
 	networkv1 "github.com/saeed-mcu/netplan-operator/api/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	netplanbin "github.com/saeed-mcu/netplan-operator/pkg/client"
 	"github.com/saeed-mcu/netplan-operator/pkg/file"
@@ -101,9 +103,9 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if !netConfig.ObjectMeta.DeletionTimestamp.IsZero() {
 		// Resource is being deleted
 		if controllerutil.ContainsFinalizer(netConfig, finalizerName) {
-			// if err := r.cleanupResource(ctx, netConfig, filePath); err != nil {
-			// 	return ctrl.Result{}, err
-			// }
+			if err := r.cleanupResource(ctx, netConfig); err != nil {
+				return ctrl.Result{}, err
+			}
 
 			// Remove finalizer to allow deletion
 			controllerutil.RemoveFinalizer(netConfig, finalizerName)
@@ -121,8 +123,24 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	desiredState := shared.NewState(netConfig.Spec.NetworkConfig)
-	logger.Info("desiredState.raw", "raw", desiredState.Raw)
-	_, err = ApplyDesiredState(r.APIClient, desiredState)
+	nmstateOutput, err := ApplyDesiredState(r.APIClient, desiredState)
+	if err != nil {
+
+		logger.Info("nmstate", "output", nmstateOutput)
+		netConfig.Status.Applied = "False"
+		netConfig.Status.State = err.Error()
+
+		meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
+			Type:               "OperatorDegraded",
+			Status:             metav1.ConditionTrue,
+			Reason:             networkv1.ReasonOperandDeploymentFailed,
+			LastTransitionTime: metav1.NewTime(time.Now()),
+			Message:            "Operator Failed",
+		})
+
+		r.Status().Update(ctx, netConfig)
+		return ctrl.Result{}, nil
+	}
 
 	// Add finalizer if not present
 	if !controllerutil.ContainsFinalizer(netConfig, finalizerName) {
@@ -132,6 +150,14 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		return ctrl.Result{Requeue: true}, nil
 	}
+
+	meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
+		Type:               "OperatorDegraded",
+		Status:             metav1.ConditionTrue,
+		Reason:             networkv1.ReasonSucceeded,
+		LastTransitionTime: metav1.NewTime(time.Now()),
+		Message:            "Operator successfully reconciling",
+	})
 
 	netConfig.Status.Applied = "True"
 	netConfig.Status.State = networkv1.NoError
@@ -148,7 +174,7 @@ func (r *NetplanConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *NetplanConfigReconciler) cleanupResource(ctx context.Context, netConfig *networkv1.NetplanConfig, filePath string) error {
+func (r *NetplanConfigReconciler) cleanupResource(ctx context.Context, netConfig *networkv1.NetplanConfig) error {
 
 	logger := log.FromContext(ctx)
 
