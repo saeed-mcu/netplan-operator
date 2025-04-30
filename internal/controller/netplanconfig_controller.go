@@ -20,37 +20,43 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/saeed-mcu/netplan-operator/api/shared"
 	networkv1 "github.com/saeed-mcu/netplan-operator/api/v1"
 
 	netplanbin "github.com/saeed-mcu/netplan-operator/pkg/client"
 	"github.com/saeed-mcu/netplan-operator/pkg/file"
+	"github.com/saeed-mcu/netplan-operator/pkg/nmstatectl"
 
 	"github.com/saeed-mcu/netplan-operator/pkg/config"
 )
 
 const (
 	finalizerName = "ae.digicloud/netplan"
+
+	defaultGwProbeTimeout = 120 * time.Second
+	apiServerProbeTimeout = 120 * time.Second
+	// DesiredStateConfigurationTimeout doubles the default gw ping probe and API server
+	// connectivity check timeout to ensure the Checkpoint is alive before rolling it back
+	// https://nmstate.github.io/cli_guide#manual-transaction-control
+	DesiredStateConfigurationTimeout = (defaultGwProbeTimeout + apiServerProbeTimeout) * 2
 )
 
 // NetplanConfigReconciler reconciles a NetplanConfig object
 type NetplanConfigReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
-	Config *config.Config
+	APIClient client.Client
+	Scheme    *runtime.Scheme
+	Config    *config.Config
 }
 
 // +kubebuilder:rbac:groups=network.netplan.io,resources=netplanconfigs,verbs=get;list;watch;create;update;patch;delete
@@ -71,28 +77,19 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	logger := log.FromContext(ctx)
 	nodeName := os.Getenv("NODE_NAME")
 
-	_, err := netplanbin.ExecuteCommand("netplan", "info")
+	_, err := netplanbin.ExecuteCommand("nmstatectl", "version")
 	if err != nil {
-		// logger.Error(err, "failed retrieving netplan info")
-		// return ctrl.Result{}, err
+		logger.Error(err, "failed retrieving nmstate version")
+		return ctrl.Result{}, err
 	}
-
-	// Write the network configuration to a file
-	//logger.Info("NetplanPath", "NetplanPath", r.Config.NetplanPath)
-	//filePath := filepath.Join(r.Config.NetplanPath, fmt.Sprintf("%s.yaml", req.Name))
-	filePath := filepath.Join("/etc/netplan", fmt.Sprintf("%s.yaml", req.Name))
-	//logger.Info("Start Reconcileing", "filePath", filePath)
 
 	netConfig := &networkv1.NetplanConfig{}
 	err = r.Get(ctx, req.NamespacedName, netConfig)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			// Request object not found, could have been deleted after reconcile req.
 			return ctrl.Result{}, nil
 		}
 
-		// Error reading the object - requeue the req.
-		logger.Info("Error reading the object")
 		return ctrl.Result{}, err
 	}
 
@@ -104,9 +101,10 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if !netConfig.ObjectMeta.DeletionTimestamp.IsZero() {
 		// Resource is being deleted
 		if controllerutil.ContainsFinalizer(netConfig, finalizerName) {
-			if err := r.cleanupResource(ctx, netConfig, filePath); err != nil {
-				return ctrl.Result{}, err
-			}
+			// if err := r.cleanupResource(ctx, netConfig, filePath); err != nil {
+			// 	return ctrl.Result{}, err
+			// }
+
 			// Remove finalizer to allow deletion
 			controllerutil.RemoveFinalizer(netConfig, finalizerName)
 			if err := r.Update(ctx, netConfig); err != nil {
@@ -116,59 +114,15 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
-	err = file.WriteConfigToFile(filePath, netConfig.Spec.NetworkConfig)
+	_, err = netplanbin.ExecuteCommand("nmstatectl", "version")
 	if err != nil {
-		logger.Error(err, "Failed to write network config to file", "path", filePath)
-		netConfig.Status.State = err.Error()
-		r.Status().Update(ctx, netConfig)
-		return reconcile.Result{}, err
+		logger.Error(err, "failed retrieving nmstate version")
+		return ctrl.Result{}, err
 	}
 
-	_, err = netplanbin.ExecuteCommand("netplan", "generate")
-	if err != nil {
-
-		netConfig.Status.Applied = "False"
-		netConfig.Status.State = err.Error()
-
-		meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
-			Type:               "OperatorDegraded",
-			Status:             metav1.ConditionTrue,
-			Reason:             networkv1.ReasonOperandDeploymentFailed,
-			LastTransitionTime: metav1.NewTime(time.Now()),
-			Message:            "Operator Failed",
-		})
-
-		logger.Error(err, "Netplan generate error")
-		r.Status().Update(ctx, netConfig)
-		return reconcile.Result{}, nil
-
-	} else {
-		_, err = netplanbin.RunWithNsenter("netplan", "apply")
-		if err != nil {
-
-			netConfig.Status.Applied = "False"
-			netConfig.Status.State = err.Error()
-
-			meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
-				Type:               "OperatorDegraded",
-				Status:             metav1.ConditionTrue,
-				Reason:             networkv1.ReasonOperandDeploymentFailed,
-				LastTransitionTime: metav1.NewTime(time.Now()),
-				Message:            "Operator Failed",
-			})
-
-			logger.Error(err, "Netplan Apply error")
-			return reconcile.Result{}, nil
-		}
-	}
-
-	meta.SetStatusCondition(&netConfig.Status.Conditions, metav1.Condition{
-		Type:               "OperatorDegraded",
-		Status:             metav1.ConditionTrue,
-		Reason:             networkv1.ReasonSucceeded,
-		LastTransitionTime: metav1.NewTime(time.Now()),
-		Message:            "Operator successfully reconciling",
-	})
+	desiredState := shared.NewState(netConfig.Spec.NetworkConfig)
+	logger.Info("desiredState.raw", "raw", desiredState.Raw)
+	_, err = ApplyDesiredState(r.APIClient, desiredState)
 
 	// Add finalizer if not present
 	if !controllerutil.ContainsFinalizer(netConfig, finalizerName) {
@@ -182,12 +136,13 @@ func (r *NetplanConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	netConfig.Status.Applied = "True"
 	netConfig.Status.State = networkv1.NoError
 	r.Status().Update(ctx, netConfig)
-	logger.Info("Apply Netplan Done !!!")
+	logger.Info("Apply nmstate Done !!!")
 	return ctrl.Result{Requeue: false}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *NetplanConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&networkv1.NetplanConfig{}).
 		Complete(r)
@@ -205,4 +160,37 @@ func (r *NetplanConfigReconciler) cleanupResource(ctx context.Context, netConfig
 
 	logger.Info("Cleanup Done")
 	return nil
+}
+
+func ApplyDesiredState(cli client.Client, desiredState shared.State) (string, error) {
+	if string(desiredState.Raw) == "" {
+		return "Ignoring empty desired state", nil
+	}
+
+	// Before apply we get the probes that are working fine, they should be
+	// working fine after apply
+	//probes := probe.Select(cli)
+
+	// Rollback before Apply to remove pending checkpoints (for example handler pod restarted
+	// before Commit)
+	nmstatectl.Rollback()
+
+	setOutput, err := nmstatectl.Set(desiredState, DesiredStateConfigurationTimeout)
+	if err != nil {
+		return setOutput, err
+	}
+
+	//err = probe.Run(cli, probes)
+	//if err != nil {
+	//	return "", rollback(cli, probes, errors.Wrap(err, "failed runnig probes after network changes"))
+	//}
+
+	commitOutput, err := nmstatectl.Commit()
+	if err != nil {
+		// We cannot rollback if commit fails, just return the error
+		return commitOutput, err
+	}
+
+	commandOutput := fmt.Sprintf("setOutput: %s \n", setOutput)
+	return commandOutput, nil
 }
