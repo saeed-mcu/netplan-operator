@@ -36,7 +36,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	netplanbin "github.com/saeed-mcu/netplan-operator/pkg/client"
-	"github.com/saeed-mcu/netplan-operator/pkg/file"
 	"github.com/saeed-mcu/netplan-operator/pkg/nmstatectl"
 
 	"github.com/saeed-mcu/netplan-operator/pkg/config"
@@ -177,18 +176,12 @@ func (r *NetplanConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *NetplanConfigReconciler) cleanupResource(ctx context.Context, netConfig *networkv1.NetplanConfig) error {
 
 	logger := log.FromContext(ctx)
-
-	err := file.RemoveConfigFile(filePath)
-	if err != nil {
-		// TODO:
-		logger.Error(err, "Error Delete File")
-	}
-
 	logger.Info("Cleanup Done")
 	return nil
 }
 
 func ApplyDesiredState(cli client.Client, desiredState shared.State) (string, error) {
+
 	if string(desiredState.Raw) == "" {
 		return "Ignoring empty desired state", nil
 	}
